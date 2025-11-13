@@ -60,6 +60,9 @@ def process_repository(repo_path, output_dir, ignore_dirs=None,
     # store all file paths for the manifest
     all_files = []
 
+    file_count = 0
+    skipped_count = 0
+
     for root, dirs, files in os.walk(repo_path):
         # skip ignored directories
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
@@ -74,14 +77,12 @@ def process_repository(repo_path, output_dir, ignore_dirs=None,
             relative_path = os.path.relpath(file_path, repo_path)
             all_files.append(relative_path)
 
-            file_count = 0
-            skipped_count = 0
             try:
                 # create new file with path information
                 output_filename = sanitize_filename(f"{relative_path.replace('/', '_')}")
                 output_filepath = os.path.join(output_dir, output_filename)
 
-                with open(file_path, 'r', encoding='utf', errors='replace') as input_file:
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as input_file:
                     content = input_file.read()
 
                 with open(output_filepath, 'w', encoding='utf-8') as output_file:
