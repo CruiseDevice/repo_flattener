@@ -5,24 +5,65 @@ Custom exceptions for repo_flattener
 
 class RepoFlattenerError(Exception):
     """Base exception for all repo_flattener errors"""
-    pass
+
+    def __init__(self, message: str, tip: str = None):
+        """
+        Initialize the exception with a message and optional tip.
+
+        Args:
+            message: Error message
+            tip: Optional helpful tip for the user
+        """
+        self.message = message
+        self.tip = tip
+        super().__init__(self.format_message())
+
+    def format_message(self) -> str:
+        """Format the error message with optional tip."""
+        if self.tip:
+            return f"{self.message}\nTip: {self.tip}"
+        return self.message
 
 
 class InvalidRepositoryError(RepoFlattenerError):
     """Raised when repository path is invalid or inaccessible"""
-    pass
+
+    def __init__(self, message: str, tip: str = None):
+        if tip is None:
+            # Provide helpful default tips based on common issues
+            if "does not exist" in message:
+                tip = "Make sure the path exists and is spelled correctly"
+            elif "not a directory" in message:
+                tip = "The path should point to a directory, not a file"
+            elif "not readable" in message:
+                tip = "Make sure you have read permissions for this directory"
+            else:
+                tip = "Verify the repository path and your access permissions"
+        super().__init__(message, tip)
 
 
 class OutputDirectoryError(RepoFlattenerError):
     """Raised when output directory cannot be created or accessed"""
-    pass
+
+    def __init__(self, message: str, tip: str = None):
+        if tip is None:
+            tip = "Ensure you have write permissions for the parent directory"
+        super().__init__(message, tip)
 
 
 class FileProcessingError(RepoFlattenerError):
     """Raised when a file cannot be processed"""
-    pass
+
+    def __init__(self, message: str, tip: str = None):
+        if tip is None:
+            tip = "Check file permissions and encoding"
+        super().__init__(message, tip)
 
 
 class ConfigurationError(RepoFlattenerError):
     """Raised when configuration file is invalid"""
-    pass
+
+    def __init__(self, message: str, tip: str = None):
+        if tip is None:
+            tip = "Check your .repo-flattener.yml file syntax"
+        super().__init__(message, tip)

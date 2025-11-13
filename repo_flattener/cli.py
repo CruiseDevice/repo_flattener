@@ -5,12 +5,19 @@ Command-line interface for repo-flattener
 import argparse
 import logging
 import sys
+import time
 from repo_flattener.core import (
     process_repository,
     scan_repository,
     interactive_file_selection
 )
 from repo_flattener.exceptions import RepoFlattenerError
+from repo_flattener.utils import (
+    calculate_file_statistics,
+    print_summary,
+    print_dry_run_summary,
+    format_file_type_summary
+)
 
 
 def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
@@ -78,6 +85,10 @@ Examples:
                         help='Disable manifest caching (default: caching enabled)')
     parser.add_argument('--cache-dir', type=str, default='.repo_flattener_cache', metavar='DIR',
                         help='Directory to store cache files (default: .repo_flattener_cache)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Show what would be processed without actually processing files')
+    parser.add_argument('--stats', action='store_true',
+                        help='Show detailed file type statistics')
 
     args = parser.parse_args()
 
@@ -92,7 +103,40 @@ Examples:
     ignore_dirs = args.ignore_dirs.split(',') if args.ignore_dirs else None
     ignore_exts = args.ignore_exts.split(',') if args.ignore_exts else None
 
+    # Print header if not in quiet mode
+    if not args.quiet:
+        print(f"\nProcessing repository: {args.repo_path}")
+        print(f"Output directory: {args.output}\n")
+
     try:
+        start_time = time.time()
+
+        # Handle dry-run mode
+        if args.dry_run:
+            if not args.quiet:
+                print("Scanning files...                ", end='', flush=True)
+
+            files_list = scan_repository(
+                args.repo_path,
+                ignore_dirs,
+                ignore_exts
+            )
+
+            if not args.quiet:
+                print("[✓]")
+
+            # Calculate statistics
+            stats = calculate_file_statistics(args.repo_path, files_list)
+
+            # Print dry-run summary
+            print_dry_run_summary(files_list, stats, args.output)
+
+            # Optionally show detailed stats
+            if args.stats:
+                print(format_file_type_summary(stats, top_n=15))
+
+            sys.exit(0)
+
         # Handle interactive mode
         if args.interactive:
             # First, scan the repository to get all files
@@ -106,7 +150,7 @@ Examples:
             selected_files = interactive_file_selection(files_list)
 
             # Process only the selected files
-            process_repository(
+            file_count, skipped_count, manifest_path = process_repository(
                 args.repo_path,
                 args.output,
                 ignore_dirs,
@@ -120,7 +164,7 @@ Examples:
             )
         else:
             # Normal mode: process all files
-            process_repository(
+            file_count, skipped_count, manifest_path = process_repository(
                 args.repo_path,
                 args.output,
                 ignore_dirs,
@@ -131,6 +175,26 @@ Examples:
                 use_cache=not args.no_cache,
                 cache_dir=args.cache_dir
             )
+
+        # Calculate elapsed time
+        elapsed_time = time.time() - start_time
+
+        # Calculate statistics for summary
+        # Scan the files that were processed
+        if args.interactive:
+            processed_files = selected_files
+        else:
+            processed_files = scan_repository(args.repo_path, ignore_dirs, ignore_exts)
+
+        stats = calculate_file_statistics(args.repo_path, processed_files)
+
+        # Print summary if not in quiet mode
+        if not args.quiet:
+            print_summary(file_count, skipped_count, manifest_path, stats, elapsed_time)
+
+        # Optionally show detailed stats
+        if args.stats and not args.quiet:
+            print(format_file_type_summary(stats, top_n=15))
     except RepoFlattenerError as e:
         logging.error(f"Error: {e}")
         sys.exit(1)
