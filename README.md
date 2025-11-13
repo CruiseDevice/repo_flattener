@@ -8,8 +8,12 @@ A Python package to convert a repository into flattened files for easier uploadi
 - Creates a manifest file showing the original structure
 - Configurable ignore lists for directories and file extensions
 - **Interactive mode** for selective file processing
+- **Type-safe** with full type hints
+- **Robust error handling** with custom exceptions
+- **Configurable logging** with verbose and quiet modes
+- **Configuration file support** (.repo-flattener.yml)
 - Simple command-line interface
-- Python API for programmatic access
+- Clean Python API for programmatic access
 
 ## Installation
 
@@ -46,6 +50,12 @@ repo-flattener /path/to/repository --ignore-dirs build,dist
 
 # Add custom file extensions to ignore
 repo-flattener /path/to/repository --ignore-exts .log,.tmp
+
+# Verbose output (DEBUG level)
+repo-flattener /path/to/repository --verbose
+
+# Quiet mode (errors only)
+repo-flattener /path/to/repository --quiet
 ```
 
 ### Interactive Mode
@@ -78,18 +88,29 @@ Example session:
 ### Python API
 
 ```python
-from repo_flattener import process_repository, scan_repository, interactive_file_selection
+from repo_flattener import export, process_repository, scan_repository
 
-# Basic usage
-process_repository('/path/to/repository', 'flattened_files')
+# Simplest usage with export function
+count, skipped, manifest = export('/path/to/repository', 'output')
+print(f"Processed {count} files, skipped {skipped}")
 
-# With custom ignore lists
-process_repository(
+# Export with options
+count, skipped, manifest = export(
     '/path/to/repository',
-    'flattened_files',
+    output_dir='flattened_files',
     ignore_dirs=['build', 'dist'],
     ignore_exts=['.log', '.tmp']
 )
+
+# Export with interactive mode
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    interactive=True  # Opens interactive file selector
+)
+
+# Using process_repository (lower-level API)
+process_repository('/path/to/repository', 'flattened_files')
 
 # Scan repository to get list of files
 files = scan_repository('/path/to/repository')
@@ -106,6 +127,16 @@ process_repository(
     'flattened_files',
     file_list=['README.md', 'src/main.py', 'src/utils.py']
 )
+
+# Error handling
+from repo_flattener import InvalidRepositoryError, OutputDirectoryError
+
+try:
+    export('/path/to/repository', 'output')
+except InvalidRepositoryError as e:
+    print(f"Invalid repository: {e}")
+except OutputDirectoryError as e:
+    print(f"Cannot create output: {e}")
 ```
 
 ## Output
@@ -115,12 +146,44 @@ The tool creates a directory with:
 1. Flattened files named according to their original path (with path separators replaced by underscores)
 2. A `file_manifest.txt` showing the original repository structure
 
+## Configuration File
+
+You can create a `.repo-flattener.yml` configuration file in your repository for default settings:
+
+```yaml
+# .repo-flattener.yml
+ignore_dirs:
+  - build
+  - dist
+  - coverage
+ignore_exts:
+  - .log
+  - .tmp
+  - .cache
+output_dir: flattened_output
+```
+
+The CLI will automatically load this file if present. Command-line arguments override configuration file settings.
+
 ## Development
 
 ### Running Tests
 
 ```bash
+# Run all tests
 pytest
+
+# Run with coverage
+pytest --cov=repo_flattener --cov-report=html
+
+# Run in verbose mode
+pytest -v
+```
+
+### Installing Development Dependencies
+
+```bash
+pip install -e ".[dev]"
 ```
 
 ## License

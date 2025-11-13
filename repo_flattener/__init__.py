@@ -11,8 +11,17 @@ from repo_flattener.core import (
     interactive_file_selection,
     sanitize_filename,
     create_manifest,
+    export,
     IGNORE_DIRS,
     IGNORE_EXTS
+)
+
+from repo_flattener.exceptions import (
+    RepoFlattenerError,
+    InvalidRepositoryError,
+    OutputDirectoryError,
+    FileProcessingError,
+    ConfigurationError
 )
 
 __all__ = [
@@ -21,6 +30,12 @@ __all__ = [
     'interactive_file_selection',
     'sanitize_filename',
     'create_manifest',
+    'export',
     'IGNORE_DIRS',
-    'IGNORE_EXTS'
+    'IGNORE_EXTS',
+    'RepoFlattenerError',
+    'InvalidRepositoryError',
+    'OutputDirectoryError',
+    'FileProcessingError',
+    'ConfigurationError'
 ]
