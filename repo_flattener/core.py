@@ -19,6 +19,7 @@ from repo_flattener.exceptions import (
     InvalidRepositoryError,
     OutputDirectoryError
 )
+from repo_flattener.cache import ManifestCache
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -303,7 +304,9 @@ def process_repository(
     file_list: Optional[List[str]] = None,
     show_progress: bool = True,
     max_workers: int = 1,
-    max_file_size: int = 0
+    max_file_size: int = 0,
+    use_cache: bool = True,
+    cache_dir: str = ".repo_flattener_cache"
 ) -> Tuple[int, int, str]:
     """
     Process all files in a repository and create flattened files in the output
@@ -318,6 +321,8 @@ def process_repository(
         show_progress: Show progress bar during processing (default: True)
         max_workers: Number of parallel workers (default: 1, set to 0 for auto)
         max_file_size: Maximum file size in bytes (0 = no limit, default: 0)
+        use_cache: Use cached manifest if available (default: True)
+        cache_dir: Directory to store cache files (default: .repo_flattener_cache)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -445,7 +450,7 @@ def process_repository(
                 logger.warning(error_msg)
                 skipped_count += 1
 
-    manifest_path = create_manifest(output_dir, all_files)
+    manifest_path = create_manifest(output_dir, all_files, repo_path, use_cache, cache_dir)
 
     logger.info(f"Completed processing {file_count} files.")
     if skipped_count > 0:
@@ -455,18 +460,34 @@ def process_repository(
     return file_count, skipped_count, manifest_path
 
 
-def create_manifest(output_dir: str, all_files: List[str]) -> str:
+def create_manifest(
+    output_dir: str,
+    all_files: List[str],
+    repo_path: Optional[str] = None,
+    use_cache: bool = True,
+    cache_dir: str = ".repo_flattener_cache"
+) -> str:
     """
     Create a manifest file with a structured representation of all processed files.
 
     Args:
         output_dir: Directory to save the manifest
         all_files: List of all processed file paths
+        repo_path: Path to the repository (required for caching)
+        use_cache: Use cached manifest if available (default: True)
+        cache_dir: Directory to store cache files (default: .repo_flattener_cache)
 
     Returns:
         Path to the created manifest file
     """
     manifest_path = os.path.join(output_dir, 'file_manifest.txt')
+
+    # Check cache if enabled and repo_path is provided
+    if use_cache and repo_path is not None:
+        cache = ManifestCache(cache_dir)
+        cached_manifest = cache.get_cached_manifest(repo_path, output_dir, all_files)
+        if cached_manifest is not None:
+            return cached_manifest
     with open(manifest_path, 'w', encoding='utf-8') as manifest:
         manifest.write("Repository structure:\n\n")
 
@@ -500,6 +521,12 @@ def create_manifest(output_dir: str, all_files: List[str]) -> str:
                 write_tree(contents, level + 1)
 
         write_tree(file_tree)
+
+    # Save to cache if enabled and repo_path is provided
+    if use_cache and repo_path is not None:
+        cache = ManifestCache(cache_dir)
+        cache.save_manifest_cache(repo_path, output_dir, all_files, manifest_path)
+
     return manifest_path
 
 
@@ -512,7 +539,9 @@ def export(
     interactive: bool = False,
     show_progress: bool = True,
     max_workers: int = 1,
-    max_file_size: int = 0
+    max_file_size: int = 0,
+    use_cache: bool = True,
+    cache_dir: str = ".repo_flattener_cache"
 ) -> Tuple[int, int, str]:
     """
     Export/flatten a repository to make it easier to upload to LLMs.
@@ -528,6 +557,8 @@ def export(
         show_progress: Show progress bar during processing (default: True)
         max_workers: Number of parallel workers (default: 1, set to 0 for auto)
         max_file_size: Maximum file size in bytes (0 = no limit, default: 0)
+        use_cache: Use cached manifest if available (default: True)
+        cache_dir: Directory to store cache files (default: .repo_flattener_cache)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -546,6 +577,12 @@ def export(
 
         >>> # With file size limit (10MB)
         >>> count, skipped, manifest = export('/path/to/repo', 'output', max_file_size=10_000_000)
+
+        >>> # With caching enabled (default)
+        >>> count, skipped, manifest = export('/path/to/repo', 'output', use_cache=True)
+
+        >>> # Disable caching
+        >>> count, skipped, manifest = export('/path/to/repo', 'output', use_cache=False)
     """
     if interactive:
         # Scan and select files interactively
@@ -560,5 +597,7 @@ def export(
         file_list=file_list,
         show_progress=show_progress,
         max_workers=max_workers,
-        max_file_size=max_file_size
+        max_file_size=max_file_size,
+        use_cache=use_cache,
+        cache_dir=cache_dir
     )

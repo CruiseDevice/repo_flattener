@@ -74,6 +74,10 @@ Examples:
                         help='Number of parallel workers (default: 1, 0 for auto)')
     parser.add_argument('--max-file-size', type=int, default=0, metavar='BYTES',
                         help='Maximum file size in bytes (default: 0 = no limit, e.g., 10485760 for 10MB)')
+    parser.add_argument('--no-cache', action='store_true',
+                        help='Disable manifest caching (default: caching enabled)')
+    parser.add_argument('--cache-dir', type=str, default='.repo_flattener_cache', metavar='DIR',
+                        help='Directory to store cache files (default: .repo_flattener_cache)')
 
     args = parser.parse_args()
 
@@ -110,7 +114,9 @@ Examples:
                 file_list=selected_files,
                 show_progress=show_progress,
                 max_workers=args.workers,
-                max_file_size=args.max_file_size
+                max_file_size=args.max_file_size,
+                use_cache=not args.no_cache,
+                cache_dir=args.cache_dir
             )
         else:
             # Normal mode: process all files
@@ -121,7 +127,9 @@ Examples:
                 ignore_exts,
                 show_progress=show_progress,
                 max_workers=args.workers,
-                max_file_size=args.max_file_size
+                max_file_size=args.max_file_size,
+                use_cache=not args.no_cache,
+                cache_dir=args.cache_dir
             )
     except RepoFlattenerError as e:
         logging.error(f"Error: {e}")
