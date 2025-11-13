@@ -8,8 +8,11 @@ A Python package to convert a repository into flattened files for easier uploadi
 - Creates a manifest file showing the original structure
 - Configurable ignore lists for directories and file extensions
 - **Interactive mode** for selective file processing
+- **Dry-run mode** to preview what would be processed
+- **Enhanced CLI output** with visual indicators and summaries
+- **Statistics** showing file type breakdown and token estimates
 - **Type-safe** with full type hints
-- **Robust error handling** with custom exceptions
+- **Robust error handling** with helpful tips and suggestions
 - **Configurable logging** with verbose and quiet modes
 - **Progress bar** for visual feedback during processing
 - **Parallel processing** for faster performance on large repositories
@@ -72,6 +75,96 @@ repo-flattener /path/to/repository --workers 0
 
 # Set maximum file size (10MB = 10485760 bytes)
 repo-flattener /path/to/repository --max-file-size 10485760
+
+# Dry run - see what would be processed without actually doing it
+repo-flattener /path/to/repository --dry-run
+
+# Show detailed file type statistics
+repo-flattener /path/to/repository --stats
+```
+
+### Dry Run Mode
+
+Preview what would be processed without actually modifying any files:
+
+```bash
+repo-flattener /path/to/repository --dry-run
+```
+
+**Output includes:**
+- Number of files that would be processed
+- Total size estimation
+- Estimated token count for LLM context
+- File type breakdown with percentages
+
+**Example output:**
+```
+============================================================
+DRY RUN - No files will be modified
+============================================================
+
+  📂 Repository files: 42
+  📁 Output directory: ./flattened_output
+  📊 Total size: 1.2 MB
+  🔢 Estimated tokens: ~312K
+
+File Type Breakdown:
+--------------------------------------------------
+  .py                    25 files ( 59.5%) ██████████████████████████████
+  .js                    12 files ( 28.6%) ██████████████
+  .md                     5 files ( 11.9%) ██████
+
+============================================================
+To proceed with processing, run without --dry-run flag
+============================================================
+```
+
+### Statistics Summary
+
+View detailed file type breakdown after processing:
+
+```bash
+repo-flattener /path/to/repository --stats
+```
+
+Shows:
+- File count by extension
+- Percentage distribution
+- Visual bar chart
+
+### Enhanced CLI Output
+
+Repo-flattener provides clear, informative output with visual indicators:
+
+```bash
+repo-flattener /path/to/repository
+```
+
+**Example output:**
+```
+Processing repository: /home/user/myproject
+Output directory: ./flattened_output
+
+Processing files... ████████████████████ 100% (42/42)
+
+============================================================
+SUMMARY
+============================================================
+  ✓ 42 files processed successfully
+  ⚠ 3 files skipped
+  📁 Manifest: ./flattened_output/file_manifest.txt
+  📊 Total size: 1.2 MB
+  🔢 Estimated tokens: ~312K
+
+  ⏱  Done in 1.3 seconds!
+============================================================
+```
+
+**Better Error Messages:**
+Error messages now include helpful tips:
+```
+Error: Repository path does not exist: /invalid/path
+Tip: Make sure the path exists and is spelled correctly
 ```
 
 ### Progress Bar
