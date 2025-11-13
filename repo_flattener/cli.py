@@ -72,6 +72,8 @@ Examples:
                         help='Disable progress bar')
     parser.add_argument('--workers', '-w', type=int, default=1, metavar='N',
                         help='Number of parallel workers (default: 1, 0 for auto)')
+    parser.add_argument('--max-file-size', type=int, default=0, metavar='BYTES',
+                        help='Maximum file size in bytes (default: 0 = no limit, e.g., 10485760 for 10MB)')
 
     args = parser.parse_args()
 
@@ -107,7 +109,8 @@ Examples:
                 ignore_exts,
                 file_list=selected_files,
                 show_progress=show_progress,
-                max_workers=args.workers
+                max_workers=args.workers,
+                max_file_size=args.max_file_size
             )
         else:
             # Normal mode: process all files
@@ -117,7 +120,8 @@ Examples:
                 ignore_dirs,
                 ignore_exts,
                 show_progress=show_progress,
-                max_workers=args.workers
+                max_workers=args.workers,
+                max_file_size=args.max_file_size
             )
     except RepoFlattenerError as e:
         logging.error(f"Error: {e}")

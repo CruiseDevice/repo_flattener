@@ -50,7 +50,8 @@ def _process_single_file(
     file_path: str,
     relative_path: str,
     output_dir: str,
-    repo_path: str
+    repo_path: str,
+    max_file_size: int = 0
 ) -> Tuple[bool, Optional[str]]:
     """
     Process a single file (helper function for parallel processing).
@@ -60,11 +61,20 @@ def _process_single_file(
         relative_path: Relative path from repository root
         output_dir: Directory to output the processed file
         repo_path: Repository root path
+        max_file_size: Maximum file size in bytes (0 = no limit)
 
     Returns:
         Tuple of (success: bool, error_message: Optional[str])
     """
     try:
+        # Check file size before processing
+        if max_file_size > 0:
+            file_size = os.path.getsize(file_path)
+            if file_size > max_file_size:
+                size_mb = file_size / (1024 * 1024)
+                max_mb = max_file_size / (1024 * 1024)
+                return False, f"Skipped {file_path} ({size_mb:.1f}MB exceeds limit of {max_mb:.1f}MB)"
+
         # create new file with path information
         output_filename = sanitize_filename(f"{relative_path.replace('/', '_')}")
         output_filepath = os.path.join(output_dir, output_filename)
@@ -292,7 +302,8 @@ def process_repository(
     ignore_exts: Optional[List[str]] = None,
     file_list: Optional[List[str]] = None,
     show_progress: bool = True,
-    max_workers: int = 1
+    max_workers: int = 1,
+    max_file_size: int = 0
 ) -> Tuple[int, int, str]:
     """
     Process all files in a repository and create flattened files in the output
@@ -306,6 +317,7 @@ def process_repository(
         file_list: Specific list of files to process (relative paths)
         show_progress: Show progress bar during processing (default: True)
         max_workers: Number of parallel workers (default: 1, set to 0 for auto)
+        max_file_size: Maximum file size in bytes (0 = no limit, default: 0)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -389,7 +401,7 @@ def process_repository(
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_file = {
-                executor.submit(_process_single_file, fp, rp, output_dir, repo_path): (fp, rp)
+                executor.submit(_process_single_file, fp, rp, output_dir, repo_path, max_file_size): (fp, rp)
                 for fp, rp in files_to_process
             }
 
@@ -422,7 +434,7 @@ def process_repository(
             files_iterator = files_to_process
 
         for file_path, relative_path in files_iterator:
-            success, error_msg = _process_single_file(file_path, relative_path, output_dir, repo_path)
+            success, error_msg = _process_single_file(file_path, relative_path, output_dir, repo_path, max_file_size)
 
             if success:
                 file_count += 1
@@ -499,7 +511,8 @@ def export(
     file_list: Optional[List[str]] = None,
     interactive: bool = False,
     show_progress: bool = True,
-    max_workers: int = 1
+    max_workers: int = 1,
+    max_file_size: int = 0
 ) -> Tuple[int, int, str]:
     """
     Export/flatten a repository to make it easier to upload to LLMs.
@@ -514,6 +527,7 @@ def export(
         interactive: If True, interactively select files
         show_progress: Show progress bar during processing (default: True)
         max_workers: Number of parallel workers (default: 1, set to 0 for auto)
+        max_file_size: Maximum file size in bytes (0 = no limit, default: 0)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -529,6 +543,9 @@ def export(
 
         >>> # With parallel processing
         >>> count, skipped, manifest = export('/path/to/repo', 'output', max_workers=4)
+
+        >>> # With file size limit (10MB)
+        >>> count, skipped, manifest = export('/path/to/repo', 'output', max_file_size=10_000_000)
     """
     if interactive:
         # Scan and select files interactively
@@ -542,5 +559,6 @@ def export(
         ignore_exts=ignore_exts,
         file_list=file_list,
         show_progress=show_progress,
-        max_workers=max_workers
+        max_workers=max_workers,
+        max_file_size=max_file_size
     )

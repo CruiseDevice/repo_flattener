@@ -13,6 +13,7 @@ A Python package to convert a repository into flattened files for easier uploadi
 - **Configurable logging** with verbose and quiet modes
 - **Progress bar** for visual feedback during processing
 - **Parallel processing** for faster performance on large repositories
+- **Memory optimization** with configurable file size limits
 - **Configuration file support** (.repo-flattener.yml)
 - Simple command-line interface
 - Clean Python API for programmatic access
@@ -67,6 +68,9 @@ repo-flattener /path/to/repository --workers 4
 
 # Auto-detect optimal number of workers
 repo-flattener /path/to/repository --workers 0
+
+# Set maximum file size (10MB = 10485760 bytes)
+repo-flattener /path/to/repository --max-file-size 10485760
 ```
 
 ### Progress Bar
@@ -110,6 +114,27 @@ repo-flattener /path/to/repository --workers 4 --verbose
 - `--workers 0` auto-detects: `min(32, CPU_count + 4)`
 - More workers = faster for I/O-bound operations (reading/writing files)
 - Single worker (default) has lowest memory overhead
+
+### Memory Optimization
+
+For repositories with very large files, you can set a maximum file size to prevent loading huge files into memory:
+
+```bash
+# Skip files larger than 10MB
+repo-flattener /path/to/repository --max-file-size 10485760
+
+# Skip files larger than 50MB
+repo-flattener /path/to/repository --max-file-size 52428800
+
+# Combine with parallel processing
+repo-flattener /path/to/repository --workers 4 --max-file-size 10485760
+```
+
+**Usage Tips:**
+- `--max-file-size` accepts size in bytes (e.g., 10485760 for 10MB)
+- Default is 0 (no limit) - all files will be processed
+- Files exceeding the limit are skipped and logged as warnings
+- Skipped files still appear in the manifest but are not flattened
 
 ### Interactive Mode
 
@@ -181,6 +206,21 @@ count, skipped, manifest = export(
     '/path/to/repository',
     'output',
     max_workers=0  # Auto-detect
+)
+
+# Skip files larger than 10MB
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    max_file_size=10_000_000  # 10MB in bytes
+)
+
+# Combine parallel processing with file size limit
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    max_workers=4,
+    max_file_size=10_000_000
 )
 
 # Using process_repository (lower-level API)
