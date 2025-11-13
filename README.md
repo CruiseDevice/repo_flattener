@@ -11,6 +11,7 @@ A Python package to convert a repository into flattened files for easier uploadi
 - **Type-safe** with full type hints
 - **Robust error handling** with custom exceptions
 - **Configurable logging** with verbose and quiet modes
+- **Progress bar** for visual feedback during processing
 - **Configuration file support** (.repo-flattener.yml)
 - Simple command-line interface
 - Clean Python API for programmatic access
@@ -56,6 +57,30 @@ repo-flattener /path/to/repository --verbose
 
 # Quiet mode (errors only)
 repo-flattener /path/to/repository --quiet
+
+# Disable progress bar
+repo-flattener /path/to/repository --no-progress
+```
+
+### Progress Bar
+
+By default, repo-flattener shows a progress bar when processing files:
+
+```
+Processing files: 100%|██████████| 1523/1523 [00:02<00:00, 615.24file/s]
+```
+
+The progress bar is automatically disabled in:
+- Quiet mode (`--quiet`)
+- When explicitly disabled (`--no-progress`)
+- Non-interactive environments (e.g., CI/CD pipelines)
+
+```bash
+# With progress bar (default)
+repo-flattener /path/to/repository
+
+# Without progress bar
+repo-flattener /path/to/repository --no-progress
 ```
 
 ### Interactive Mode
@@ -107,6 +132,13 @@ count, skipped, manifest = export(
     '/path/to/repository',
     'output',
     interactive=True  # Opens interactive file selector
+)
+
+# Export without progress bar
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    show_progress=False
 )
 
 # Using process_repository (lower-level API)
