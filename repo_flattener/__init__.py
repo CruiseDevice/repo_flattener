@@ -3,7 +3,7 @@ Repo Flattener - A tool to convert a repository into flattened files
 for easier LLM upload.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.2.1"
 
 from repo_flattener.core import (
     process_repository,
