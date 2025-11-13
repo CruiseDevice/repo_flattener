@@ -5,6 +5,16 @@ Core functionality for repo flattener
 import os
 import re
 import sys
+import logging
+from typing import List, Optional, Tuple
+
+from repo_flattener.exceptions import (
+    InvalidRepositoryError,
+    OutputDirectoryError
+)
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 # Default directories to ignore
 IGNORE_DIRS = ['.git', 'node_modules', '__pycache', '.idea', '.vscode',
@@ -15,32 +25,47 @@ IGNORE_EXTS = ['.pyc', '.class', '.o', '.so', '.dll', '.exe', '.jar',
                '.war']
 
 
-def sanitize_filename(filename):
+def sanitize_filename(filename: str) -> str:
     """
     Sanitize a filename to remove invalid characters.
 
     Args:
-        filename (str): The filename to sanitize
+        filename: The filename to sanitize
 
     Returns:
-        str: Sanitized filename
+        Sanitized filename
     """
     # Replace invalid filename characters with underscore
     return re.sub(r'[\\/*?:"<>|]', "_", filename)
 
 
-def scan_repository(repo_path, ignore_dirs=None, ignore_exts=None):
+def scan_repository(
+    repo_path: str,
+    ignore_dirs: Optional[List[str]] = None,
+    ignore_exts: Optional[List[str]] = None
+) -> List[str]:
     """
     Scan a repository and return a list of files that would be processed.
 
     Args:
-        repo_path (str): Path to the repository
-        ignore_dirs (list, optional): List of directories to ignore
-        ignore_exts (list, optional): List of file extensions to ignore
+        repo_path: Path to the repository
+        ignore_dirs: List of directories to ignore
+        ignore_exts: List of file extensions to ignore
 
     Returns:
-        list: List of relative file paths
+        List of relative file paths
+
+    Raises:
+        InvalidRepositoryError: If repository path doesn't exist or isn't accessible
     """
+    # Validate repository path
+    if not os.path.exists(repo_path):
+        raise InvalidRepositoryError(f"Repository path does not exist: {repo_path}")
+    if not os.path.isdir(repo_path):
+        raise InvalidRepositoryError(f"Repository path is not a directory: {repo_path}")
+    if not os.access(repo_path, os.R_OK):
+        raise InvalidRepositoryError(f"Repository path is not readable: {repo_path}")
+
     if ignore_dirs is not None:
         ignore_dirs = ignore_dirs + IGNORE_DIRS
     else:
@@ -53,6 +78,8 @@ def scan_repository(repo_path, ignore_dirs=None, ignore_exts=None):
 
     repo_path = os.path.abspath(repo_path)
     files_list = []
+
+    logger.debug(f"Scanning repository: {repo_path}")
 
     for root, dirs, files in os.walk(repo_path):
         # skip ignored directories
@@ -69,15 +96,15 @@ def scan_repository(repo_path, ignore_dirs=None, ignore_exts=None):
     return sorted(files_list)
 
 
-def interactive_file_selection(files_list):
+def interactive_file_selection(files_list: List[str]) -> List[str]:
     """
     Present an interactive menu for users to select/deselect files.
 
     Args:
-        files_list (list): List of file paths to choose from
+        files_list: List of file paths to choose from
 
     Returns:
-        list: List of selected file paths
+        List of selected file paths
     """
     if not files_list:
         print("No files found to process.")
@@ -215,19 +242,37 @@ def interactive_file_selection(files_list):
             sys.exit(0)
 
 
-def process_repository(repo_path, output_dir, ignore_dirs=None,
-                       ignore_exts=None, file_list=None):
+def process_repository(
+    repo_path: str,
+    output_dir: str,
+    ignore_dirs: Optional[List[str]] = None,
+    ignore_exts: Optional[List[str]] = None,
+    file_list: Optional[List[str]] = None
+) -> Tuple[int, int, str]:
     """
     Process all files in a repository and create flattened files in the output
     directory.
 
     Args:
-        repo_path (str): Path to the repository
-        output_dir (str): Directory to output the processed files.
-        ignore_dirs (list, optional): List of directories to ignore
-        ignore_exts (list, optional): List of file extensions to ignore
-        file_list (list, optional): Specific list of files to process (relative paths)
+        repo_path: Path to the repository
+        output_dir: Directory to output the processed files
+        ignore_dirs: List of directories to ignore
+        ignore_exts: List of file extensions to ignore
+        file_list: Specific list of files to process (relative paths)
+
+    Returns:
+        Tuple of (file_count, skipped_count, manifest_path)
+
+    Raises:
+        InvalidRepositoryError: If repository path is invalid
+        OutputDirectoryError: If output directory cannot be created
     """
+    # Validate repository path
+    if not os.path.exists(repo_path):
+        raise InvalidRepositoryError(f"Repository path does not exist: {repo_path}")
+    if not os.path.isdir(repo_path):
+        raise InvalidRepositoryError(f"Repository path is not a directory: {repo_path}")
+
     if ignore_dirs is not None:
         ignore_dirs = ignore_dirs + IGNORE_DIRS
     else:
@@ -239,11 +284,14 @@ def process_repository(repo_path, output_dir, ignore_dirs=None,
         ignore_exts = IGNORE_EXTS
 
     # create output directory if it does not exist
-    os.makedirs(output_dir, exist_ok=True)
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as e:
+        raise OutputDirectoryError(f"Cannot create output directory: {e}")
 
     repo_path = os.path.abspath(repo_path)
-    print(f"Processing repository: {repo_path}")
-    print(f"Output directory: {output_dir}")
+    logger.info(f"Processing repository: {repo_path}")
+    logger.info(f"Output directory: {output_dir}")
 
     # store all file paths for the manifest
     all_files = []
@@ -272,9 +320,9 @@ def process_repository(repo_path, output_dir, ignore_dirs=None,
                     output_file.write(content)
                 file_count += 1
                 if file_count % 50 == 0:
-                    print(f"Processed {file_count} files...")
+                    logger.info(f"Processed {file_count} files...")
             except Exception as e:
-                print(f"Error processing file {file_path}: {str(e)}")
+                logger.warning(f"Error processing file {file_path}: {str(e)}")
                 skipped_count += 1
     else:
         # Normal mode: scan and process all files
@@ -306,30 +354,31 @@ def process_repository(repo_path, output_dir, ignore_dirs=None,
                         output_file.write(content)
                     file_count += 1
                     if file_count % 50 == 0:
-                        print(f"Processed {file_count} files...")
+                        logger.info(f"Processed {file_count} files...")
                 except Exception as e:
-                    print(f"Error processing file {file_path}: {str(e)}")
+                    logger.warning(f"Error processing file {file_path}: {str(e)}")
                     skipped_count += 1
 
     manifest_path = create_manifest(output_dir, all_files)
 
-    print(f"Completed processing {file_count} files.")
-    print(f"Skipped {skipped_count} files due to errors.")
-    print(f"Manifest created at {manifest_path}")
+    logger.info(f"Completed processing {file_count} files.")
+    if skipped_count > 0:
+        logger.warning(f"Skipped {skipped_count} files due to errors.")
+    logger.info(f"Manifest created at {manifest_path}")
 
     return file_count, skipped_count, manifest_path
 
 
-def create_manifest(output_dir, all_files):
+def create_manifest(output_dir: str, all_files: List[str]) -> str:
     """
     Create a manifest file with a structured representation of all processed files.
 
     Args:
-        output_dir (str): Director to save the manifest
-        all_files (list): List of all processed file paths
+        output_dir: Directory to save the manifest
+        all_files: List of all processed file paths
 
     Returns:
-        str: Path to the created manifest file
+        Path to the created manifest file
     """
     manifest_path = os.path.join(output_dir, 'file_manifest.txt')
     with open(manifest_path, 'w', encoding='utf-8') as manifest:
@@ -366,3 +415,49 @@ def create_manifest(output_dir, all_files):
 
         write_tree(file_tree)
     return manifest_path
+
+
+def export(
+    repo_path: str,
+    output_dir: str = 'flattened_repo',
+    ignore_dirs: Optional[List[str]] = None,
+    ignore_exts: Optional[List[str]] = None,
+    file_list: Optional[List[str]] = None,
+    interactive: bool = False
+) -> Tuple[int, int, str]:
+    """
+    Export/flatten a repository to make it easier to upload to LLMs.
+    This is a convenience wrapper around process_repository with a more explicit name.
+
+    Args:
+        repo_path: Path to the repository
+        output_dir: Directory to output the processed files (default: 'flattened_repo')
+        ignore_dirs: List of directories to ignore
+        ignore_exts: List of file extensions to ignore
+        file_list: Specific list of files to process (relative paths)
+        interactive: If True, interactively select files
+
+    Returns:
+        Tuple of (file_count, skipped_count, manifest_path)
+
+    Raises:
+        InvalidRepositoryError: If repository path is invalid
+        OutputDirectoryError: If output directory cannot be created
+
+    Example:
+        >>> from repo_flattener import export
+        >>> count, skipped, manifest = export('/path/to/repo', 'output')
+        >>> print(f"Processed {count} files")
+    """
+    if interactive:
+        # Scan and select files interactively
+        files = scan_repository(repo_path, ignore_dirs, ignore_exts)
+        file_list = interactive_file_selection(files)
+
+    return process_repository(
+        repo_path=repo_path,
+        output_dir=output_dir,
+        ignore_dirs=ignore_dirs,
+        ignore_exts=ignore_exts,
+        file_list=file_list
+    )

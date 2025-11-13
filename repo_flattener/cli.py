@@ -3,11 +3,37 @@ Command-line interface for repo-flattener
 """
 
 import argparse
+import logging
+import sys
 from repo_flattener.core import (
     process_repository,
     scan_repository,
     interactive_file_selection
 )
+from repo_flattener.exceptions import RepoFlattenerError
+
+
+def setup_logging(verbose: bool = False, quiet: bool = False) -> None:
+    """
+    Configure logging based on verbosity flags.
+
+    Args:
+        verbose: Enable verbose (DEBUG) logging
+        quiet: Suppress all non-error logging
+    """
+    if quiet:
+        level = logging.ERROR
+    elif verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+
+    # Configure root logger
+    logging.basicConfig(
+        level=level,
+        format='%(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
 
 
 def main():
@@ -38,41 +64,60 @@ Examples:
                         default=None)
     parser.add_argument('--interactive', '-i', action='store_true',
                         help='Interactively select files to process')
+    parser.add_argument('--verbose', '-v', action='store_true',
+                        help='Enable verbose output (DEBUG level)')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Suppress all non-error output')
 
     args = parser.parse_args()
+
+    # Setup logging
+    setup_logging(verbose=args.verbose, quiet=args.quiet)
 
     # process ignore lists
     ignore_dirs = args.ignore_dirs.split(',') if args.ignore_dirs else None
     ignore_exts = args.ignore_exts.split(',') if args.ignore_exts else None
 
-    # Handle interactive mode
-    if args.interactive:
-        # First, scan the repository to get all files
-        files_list = scan_repository(
-            args.repo_path,
-            ignore_dirs,
-            ignore_exts
-        )
+    try:
+        # Handle interactive mode
+        if args.interactive:
+            # First, scan the repository to get all files
+            files_list = scan_repository(
+                args.repo_path,
+                ignore_dirs,
+                ignore_exts
+            )
 
-        # Let user select files interactively
-        selected_files = interactive_file_selection(files_list)
+            # Let user select files interactively
+            selected_files = interactive_file_selection(files_list)
 
-        # Process only the selected files
-        process_repository(
-            args.repo_path,
-            args.output,
-            ignore_dirs,
-            ignore_exts,
-            file_list=selected_files
-        )
-    else:
-        # Normal mode: process all files
-        process_repository(
-            args.repo_path,
-            args.output,
-            ignore_dirs,
-            ignore_exts
-        )
+            # Process only the selected files
+            process_repository(
+                args.repo_path,
+                args.output,
+                ignore_dirs,
+                ignore_exts,
+                file_list=selected_files
+            )
+        else:
+            # Normal mode: process all files
+            process_repository(
+                args.repo_path,
+                args.output,
+                ignore_dirs,
+                ignore_exts
+            )
+    except RepoFlattenerError as e:
+        logging.error(f"Error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logging.info("\nOperation cancelled by user")
+        sys.exit(130)
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        if args.verbose:
+            logging.exception("Full traceback:")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
