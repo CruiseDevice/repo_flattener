@@ -17,7 +17,9 @@ except ImportError:
 
 from repo_flattener.exceptions import (
     InvalidRepositoryError,
-    OutputDirectoryError
+    OutputDirectoryError,
+    SecurityError,
+    ResourceLimitError
 )
 from repo_flattener.cache import ManifestCache
 
@@ -31,6 +33,9 @@ IGNORE_DIRS = ['.git', 'node_modules', '__pycache', '.idea', '.vscode',
 # Default file extensions to ignore
 IGNORE_EXTS = ['.pyc', '.class', '.o', '.so', '.dll', '.exe', '.jar',
                '.war']
+
+# Default resource limits
+DEFAULT_MAX_FILES = 100000  # Maximum number of files to process
 
 
 def sanitize_filename(filename: str) -> str:
@@ -80,6 +85,12 @@ def _process_single_file(
         output_filename = sanitize_filename(f"{relative_path.replace('/', '_')}")
         output_filepath = os.path.join(output_dir, output_filename)
 
+        # Path traversal protection: ensure output path stays within output_dir
+        safe_path = os.path.normpath(output_filepath)
+        abs_output_dir = os.path.abspath(output_dir)
+        if not safe_path.startswith(abs_output_dir):
+            return False, f"Security error: Path traversal attempt detected for {relative_path}"
+
         with open(file_path, 'r', encoding='utf-8', errors='replace') as input_file:
             content = input_file.read()
 
@@ -96,7 +107,8 @@ def _process_single_file(
 def scan_repository(
     repo_path: str,
     ignore_dirs: Optional[List[str]] = None,
-    ignore_exts: Optional[List[str]] = None
+    ignore_exts: Optional[List[str]] = None,
+    follow_symlinks: bool = False
 ) -> List[str]:
     """
     Scan a repository and return a list of files that would be processed.
@@ -105,6 +117,7 @@ def scan_repository(
         repo_path: Path to the repository
         ignore_dirs: List of directories to ignore
         ignore_exts: List of file extensions to ignore
+        follow_symlinks: Whether to follow symbolic links (default: False)
 
     Returns:
         List of relative file paths
@@ -135,7 +148,7 @@ def scan_repository(
 
     logger.debug(f"Scanning repository: {repo_path}")
 
-    for root, dirs, files in os.walk(repo_path):
+    for root, dirs, files in os.walk(repo_path, followlinks=follow_symlinks):
         # skip ignored directories
         dirs[:] = [d for d in dirs if d not in ignore_dirs]
 
@@ -143,7 +156,14 @@ def scan_repository(
             # check if any file should be ignored
             if any(filename.endswith(ext) for ext in ignore_exts):
                 continue
+
             file_path = os.path.join(root, filename)
+
+            # Symlink handling: skip if not following symlinks
+            if not follow_symlinks and os.path.islink(file_path):
+                logger.debug(f"Skipping symlink: {file_path}")
+                continue
+
             relative_path = os.path.relpath(file_path, repo_path)
             files_list.append(relative_path)
 
@@ -306,7 +326,9 @@ def process_repository(
     max_workers: int = 1,
     max_file_size: int = 0,
     use_cache: bool = True,
-    cache_dir: str = ".repo_flattener_cache"
+    cache_dir: str = ".repo_flattener_cache",
+    follow_symlinks: bool = False,
+    max_files: int = DEFAULT_MAX_FILES
 ) -> Tuple[int, int, str]:
     """
     Process all files in a repository and create flattened files in the output
@@ -323,6 +345,8 @@ def process_repository(
         max_file_size: Maximum file size in bytes (0 = no limit, default: 0)
         use_cache: Use cached manifest if available (default: True)
         cache_dir: Directory to store cache files (default: .repo_flattener_cache)
+        follow_symlinks: Follow symbolic links (default: False)
+        max_files: Maximum number of files to process (default: 100000)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -330,6 +354,7 @@ def process_repository(
     Raises:
         InvalidRepositoryError: If repository path is invalid
         OutputDirectoryError: If output directory cannot be created
+        ResourceLimitError: If file count exceeds max_files limit
     """
     # Validate repository path
     if not os.path.exists(repo_path):
@@ -376,7 +401,7 @@ def process_repository(
         # Normal mode: scan and process all files
         # First, collect all files to process for accurate progress bar
         files_to_process = []
-        for root, dirs, files in os.walk(repo_path):
+        for root, dirs, files in os.walk(repo_path, followlinks=follow_symlinks):
             # skip ignored directories
             dirs[:] = [d for d in dirs if d not in ignore_dirs]
 
@@ -384,13 +409,26 @@ def process_repository(
                 # check if any file should be ignored
                 if any(filename.endswith(ext) for ext in ignore_exts):
                     continue
+
                 file_path = os.path.join(root, filename)
+
+                # Symlink handling: skip if not following symlinks
+                if not follow_symlinks and os.path.islink(file_path):
+                    logger.debug(f"Skipping symlink: {file_path}")
+                    continue
+
                 relative_path = os.path.relpath(file_path, repo_path)
                 files_to_process.append((file_path, relative_path))
 
     # Update all_files list if not already set
     if file_list is None:
         all_files = [rp for _, rp in files_to_process]
+
+    # Resource limit check: prevent processing massive directories
+    if max_files > 0 and len(files_to_process) > max_files:
+        raise ResourceLimitError(
+            f"Repository contains {len(files_to_process)} files, which exceeds the limit of {max_files} files"
+        )
 
     # Process files - parallel or sequential
     if max_workers > 1:
@@ -541,7 +579,9 @@ def export(
     max_workers: int = 1,
     max_file_size: int = 0,
     use_cache: bool = True,
-    cache_dir: str = ".repo_flattener_cache"
+    cache_dir: str = ".repo_flattener_cache",
+    follow_symlinks: bool = False,
+    max_files: int = DEFAULT_MAX_FILES
 ) -> Tuple[int, int, str]:
     """
     Export/flatten a repository to make it easier to upload to LLMs.
@@ -559,6 +599,8 @@ def export(
         max_file_size: Maximum file size in bytes (0 = no limit, default: 0)
         use_cache: Use cached manifest if available (default: True)
         cache_dir: Directory to store cache files (default: .repo_flattener_cache)
+        follow_symlinks: Follow symbolic links (default: False)
+        max_files: Maximum number of files to process (default: 100000)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -566,6 +608,7 @@ def export(
     Raises:
         InvalidRepositoryError: If repository path is invalid
         OutputDirectoryError: If output directory cannot be created
+        ResourceLimitError: If file count exceeds max_files limit
 
     Example:
         >>> from repo_flattener import export
@@ -578,15 +621,15 @@ def export(
         >>> # With file size limit (10MB)
         >>> count, skipped, manifest = export('/path/to/repo', 'output', max_file_size=10_000_000)
 
-        >>> # With caching enabled (default)
-        >>> count, skipped, manifest = export('/path/to/repo', 'output', use_cache=True)
+        >>> # Follow symlinks
+        >>> count, skipped, manifest = export('/path/to/repo', 'output', follow_symlinks=True)
 
-        >>> # Disable caching
-        >>> count, skipped, manifest = export('/path/to/repo', 'output', use_cache=False)
+        >>> # Set maximum file limit
+        >>> count, skipped, manifest = export('/path/to/repo', 'output', max_files=50000)
     """
     if interactive:
         # Scan and select files interactively
-        files = scan_repository(repo_path, ignore_dirs, ignore_exts)
+        files = scan_repository(repo_path, ignore_dirs, ignore_exts, follow_symlinks)
         file_list = interactive_file_selection(files)
 
     return process_repository(
@@ -599,5 +642,7 @@ def export(
         max_workers=max_workers,
         max_file_size=max_file_size,
         use_cache=use_cache,
-        cache_dir=cache_dir
+        cache_dir=cache_dir,
+        follow_symlinks=follow_symlinks,
+        max_files=max_files
     )

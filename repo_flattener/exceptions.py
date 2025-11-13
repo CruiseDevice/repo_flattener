@@ -67,3 +67,29 @@ class ConfigurationError(RepoFlattenerError):
         if tip is None:
             tip = "Check your .repo-flattener.yml file syntax"
         super().__init__(message, tip)
+
+
+class SecurityError(RepoFlattenerError):
+    """Raised when a security issue is detected"""
+
+    def __init__(self, message: str, tip: str = None):
+        if tip is None:
+            if "path traversal" in message.lower():
+                tip = "File paths must remain within the output directory"
+            elif "symlink" in message.lower():
+                tip = "Use --follow-symlinks to process symbolic links"
+            else:
+                tip = "This operation was blocked for security reasons"
+        super().__init__(message, tip)
+
+
+class ResourceLimitError(RepoFlattenerError):
+    """Raised when resource limits are exceeded"""
+
+    def __init__(self, message: str, tip: str = None):
+        if tip is None:
+            if "files" in message.lower():
+                tip = "Use --max-files to increase the limit or filter files with --ignore-dirs"
+            else:
+                tip = "Reduce the scope of files to process"
+        super().__init__(message, tip)

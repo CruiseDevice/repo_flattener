@@ -18,6 +18,7 @@ A Python package to convert a repository into flattened files for easier uploadi
 - **Parallel processing** for faster performance on large repositories
 - **Memory optimization** with configurable file size limits
 - **Intelligent caching** for instant manifest generation on unchanged repositories
+- **Security features**: path traversal protection, symlink handling, resource limits
 - **Configuration file support** (.repo-flattener.yml)
 - Simple command-line interface
 - Clean Python API for programmatic access
@@ -263,6 +264,67 @@ repo-flattener /path/to/repository --cache-dir /path/to/custom/cache
 - Use `--no-cache` to bypass cache for debugging or one-time runs
 - Add `.repo_flattener_cache/` to your `.gitignore` (recommended)
 
+### Security Features
+
+Repo-flattener includes several security features to protect against common vulnerabilities:
+
+#### Path Traversal Protection
+
+All output file paths are validated to ensure they remain within the output directory:
+
+```python
+# Automatically prevents malicious paths like "../../../etc/passwd"
+# Files with suspicious paths are skipped and logged
+```
+
+**How it works:**
+- Output paths are normalized and validated before writing
+- Any attempt to write outside the output directory is blocked
+- Suspicious paths are logged as security warnings
+
+#### Symlink Handling
+
+By default, symbolic links are **skipped** for security. You can optionally follow them:
+
+```bash
+# Default: skip symbolic links (safer)
+repo-flattener /path/to/repository
+
+# Follow symbolic links (use with caution)
+repo-flattener /path/to/repository --follow-symlinks
+```
+
+**Security considerations:**
+- Skipping symlinks prevents infinite loops and accessing unintended files
+- Following symlinks may expose files outside the repository
+- Use `--follow-symlinks` only when you trust the repository source
+
+#### Resource Limits
+
+Prevent processing massive repositories that could consume excessive resources:
+
+```bash
+# Default limit: 100,000 files
+repo-flattener /path/to/repository
+
+# Set custom limit (50,000 files)
+repo-flattener /path/to/repository --max-files 50000
+
+# Disable limit (use with caution)
+repo-flattener /path/to/repository --max-files 0
+```
+
+**Protection benefits:**
+- Prevents accidental processing of extremely large directories
+- Protects against resource exhaustion attacks
+- Provides clear error messages with helpful tips
+
+**Error example:**
+```
+Error: Repository contains 150000 files, which exceeds the limit of 100000 files
+Tip: Use --max-files to increase the limit or filter files with --ignore-dirs
+```
+
 ### Interactive Mode
 
 Interactive mode allows you to manually select which files to process. This is useful when you want fine-grained control over which files to include.
@@ -362,6 +424,20 @@ count, skipped, manifest = export(
     '/path/to/repository',
     'output',
     cache_dir='/path/to/custom/cache'
+)
+
+# Follow symbolic links
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    follow_symlinks=True
+)
+
+# Set maximum file limit
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    max_files=50000
 )
 
 # Using process_repository (lower-level API)

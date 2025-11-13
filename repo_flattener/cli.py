@@ -89,6 +89,10 @@ Examples:
                         help='Show what would be processed without actually processing files')
     parser.add_argument('--stats', action='store_true',
                         help='Show detailed file type statistics')
+    parser.add_argument('--follow-symlinks', action='store_true',
+                        help='Follow symbolic links (default: skip symlinks)')
+    parser.add_argument('--max-files', type=int, default=100000, metavar='N',
+                        help='Maximum number of files to process (default: 100000, 0 for unlimited)')
 
     args = parser.parse_args()
 
@@ -119,7 +123,8 @@ Examples:
             files_list = scan_repository(
                 args.repo_path,
                 ignore_dirs,
-                ignore_exts
+                ignore_exts,
+                args.follow_symlinks
             )
 
             if not args.quiet:
@@ -143,7 +148,8 @@ Examples:
             files_list = scan_repository(
                 args.repo_path,
                 ignore_dirs,
-                ignore_exts
+                ignore_exts,
+                args.follow_symlinks
             )
 
             # Let user select files interactively
@@ -160,7 +166,9 @@ Examples:
                 max_workers=args.workers,
                 max_file_size=args.max_file_size,
                 use_cache=not args.no_cache,
-                cache_dir=args.cache_dir
+                cache_dir=args.cache_dir,
+                follow_symlinks=args.follow_symlinks,
+                max_files=args.max_files
             )
         else:
             # Normal mode: process all files
@@ -173,7 +181,9 @@ Examples:
                 max_workers=args.workers,
                 max_file_size=args.max_file_size,
                 use_cache=not args.no_cache,
-                cache_dir=args.cache_dir
+                cache_dir=args.cache_dir,
+                follow_symlinks=args.follow_symlinks,
+                max_files=args.max_files
             )
 
         # Calculate elapsed time
@@ -184,7 +194,7 @@ Examples:
         if args.interactive:
             processed_files = selected_files
         else:
-            processed_files = scan_repository(args.repo_path, ignore_dirs, ignore_exts)
+            processed_files = scan_repository(args.repo_path, ignore_dirs, ignore_exts, args.follow_symlinks)
 
         stats = calculate_file_statistics(args.repo_path, processed_files)
 
