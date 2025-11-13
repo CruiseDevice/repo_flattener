@@ -70,6 +70,8 @@ Examples:
                         help='Suppress all non-error output')
     parser.add_argument('--no-progress', action='store_true',
                         help='Disable progress bar')
+    parser.add_argument('--workers', '-w', type=int, default=1, metavar='N',
+                        help='Number of parallel workers (default: 1, 0 for auto)')
 
     args = parser.parse_args()
 
@@ -104,7 +106,8 @@ Examples:
                 ignore_dirs,
                 ignore_exts,
                 file_list=selected_files,
-                show_progress=show_progress
+                show_progress=show_progress,
+                max_workers=args.workers
             )
         else:
             # Normal mode: process all files
@@ -113,7 +116,8 @@ Examples:
                 args.output,
                 ignore_dirs,
                 ignore_exts,
-                show_progress=show_progress
+                show_progress=show_progress,
+                max_workers=args.workers
             )
     except RepoFlattenerError as e:
         logging.error(f"Error: {e}")

@@ -7,6 +7,7 @@ import re
 import sys
 import logging
 from typing import List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     from tqdm import tqdm
@@ -43,6 +44,42 @@ def sanitize_filename(filename: str) -> str:
     """
     # Replace invalid filename characters with underscore
     return re.sub(r'[\\/*?:"<>|]', "_", filename)
+
+
+def _process_single_file(
+    file_path: str,
+    relative_path: str,
+    output_dir: str,
+    repo_path: str
+) -> Tuple[bool, Optional[str]]:
+    """
+    Process a single file (helper function for parallel processing).
+
+    Args:
+        file_path: Absolute path to the file
+        relative_path: Relative path from repository root
+        output_dir: Directory to output the processed file
+        repo_path: Repository root path
+
+    Returns:
+        Tuple of (success: bool, error_message: Optional[str])
+    """
+    try:
+        # create new file with path information
+        output_filename = sanitize_filename(f"{relative_path.replace('/', '_')}")
+        output_filepath = os.path.join(output_dir, output_filename)
+
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as input_file:
+            content = input_file.read()
+
+        with open(output_filepath, 'w', encoding='utf-8') as output_file:
+            # write the file path at the top
+            output_file.write(f"// FILE: {relative_path}\n\n")
+            output_file.write(content)
+
+        return True, None
+    except Exception as e:
+        return False, f"Error processing file {file_path}: {str(e)}"
 
 
 def scan_repository(
@@ -254,7 +291,8 @@ def process_repository(
     ignore_dirs: Optional[List[str]] = None,
     ignore_exts: Optional[List[str]] = None,
     file_list: Optional[List[str]] = None,
-    show_progress: bool = True
+    show_progress: bool = True,
+    max_workers: int = 1
 ) -> Tuple[int, int, str]:
     """
     Process all files in a repository and create flattened files in the output
@@ -267,6 +305,7 @@ def process_repository(
         ignore_exts: List of file extensions to ignore
         file_list: Specific list of files to process (relative paths)
         show_progress: Show progress bar during processing (default: True)
+        max_workers: Number of parallel workers (default: 1, set to 0 for auto)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -301,44 +340,21 @@ def process_repository(
     logger.info(f"Processing repository: {repo_path}")
     logger.info(f"Output directory: {output_dir}")
 
+    # Auto-detect number of workers if set to 0
+    if max_workers == 0:
+        max_workers = min(32, (os.cpu_count() or 1) + 4)
+
     # store all file paths for the manifest
     all_files = []
 
     file_count = 0
     skipped_count = 0
 
-    # If file_list is provided, use it; otherwise scan the repository
+    # Collect files to process
     if file_list is not None:
         # Process only the specified files
         all_files = file_list
-
-        # Setup iterator with optional progress bar
-        if show_progress and TQDM_AVAILABLE:
-            file_iterator = tqdm(file_list, desc="Processing files", unit="file")
-        else:
-            file_iterator = file_list
-
-        for relative_path in file_iterator:
-            file_path = os.path.join(repo_path, relative_path)
-
-            try:
-                # create new file with path information
-                output_filename = sanitize_filename(f"{relative_path.replace('/', '_')}")
-                output_filepath = os.path.join(output_dir, output_filename)
-
-                with open(file_path, 'r', encoding='utf-8', errors='replace') as input_file:
-                    content = input_file.read()
-
-                with open(output_filepath, 'w', encoding='utf-8') as output_file:
-                    # write the file path at the top
-                    output_file.write(f"// FILE: {relative_path}\n\n")
-                    output_file.write(content)
-                file_count += 1
-                if file_count % 50 == 0:
-                    logger.info(f"Processed {file_count} files...")
-            except Exception as e:
-                logger.warning(f"Error processing file {file_path}: {str(e)}")
-                skipped_count += 1
+        files_to_process = [(os.path.join(repo_path, rp), rp) for rp in file_list]
     else:
         # Normal mode: scan and process all files
         # First, collect all files to process for accurate progress bar
@@ -355,6 +371,50 @@ def process_repository(
                 relative_path = os.path.relpath(file_path, repo_path)
                 files_to_process.append((file_path, relative_path))
 
+    # Update all_files list if not already set
+    if file_list is None:
+        all_files = [rp for _, rp in files_to_process]
+
+    # Process files - parallel or sequential
+    if max_workers > 1:
+        # Parallel processing with ThreadPoolExecutor
+        logger.debug(f"Using parallel processing with {max_workers} workers")
+
+        # Setup progress bar for parallel processing
+        if show_progress and TQDM_AVAILABLE:
+            progress_bar = tqdm(total=len(files_to_process), desc="Processing files", unit="file")
+        else:
+            progress_bar = None
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_file = {
+                executor.submit(_process_single_file, fp, rp, output_dir, repo_path): (fp, rp)
+                for fp, rp in files_to_process
+            }
+
+            # Process completed tasks
+            for future in as_completed(future_to_file):
+                file_path, relative_path = future_to_file[future]
+                success, error_msg = future.result()
+
+                if success:
+                    file_count += 1
+                else:
+                    logger.warning(error_msg)
+                    skipped_count += 1
+
+                # Update progress bar
+                if progress_bar is not None:
+                    progress_bar.update(1)
+                elif file_count % 50 == 0:
+                    logger.info(f"Processed {file_count} files...")
+
+        if progress_bar is not None:
+            progress_bar.close()
+
+    else:
+        # Sequential processing (original behavior)
         # Setup iterator with optional progress bar
         if show_progress and TQDM_AVAILABLE:
             files_iterator = tqdm(files_to_process, desc="Processing files", unit="file")
@@ -362,26 +422,15 @@ def process_repository(
             files_iterator = files_to_process
 
         for file_path, relative_path in files_iterator:
-            all_files.append(relative_path)
+            success, error_msg = _process_single_file(file_path, relative_path, output_dir, repo_path)
 
-            try:
-                # create new file with path information
-                output_filename = sanitize_filename(f"{relative_path.replace('/', '_')}")
-                output_filepath = os.path.join(output_dir, output_filename)
-
-                with open(file_path, 'r', encoding='utf-8', errors='replace') as input_file:
-                    content = input_file.read()
-
-                with open(output_filepath, 'w', encoding='utf-8') as output_file:
-                    # write the file path at the top
-                    output_file.write(f"// FILE: {relative_path}\n\n")
-                    output_file.write(content)
+            if success:
                 file_count += 1
                 # Only log every 50 files if progress bar is not shown
                 if not (show_progress and TQDM_AVAILABLE) and file_count % 50 == 0:
                     logger.info(f"Processed {file_count} files...")
-            except Exception as e:
-                logger.warning(f"Error processing file {file_path}: {str(e)}")
+            else:
+                logger.warning(error_msg)
                 skipped_count += 1
 
     manifest_path = create_manifest(output_dir, all_files)
@@ -449,7 +498,8 @@ def export(
     ignore_exts: Optional[List[str]] = None,
     file_list: Optional[List[str]] = None,
     interactive: bool = False,
-    show_progress: bool = True
+    show_progress: bool = True,
+    max_workers: int = 1
 ) -> Tuple[int, int, str]:
     """
     Export/flatten a repository to make it easier to upload to LLMs.
@@ -463,6 +513,7 @@ def export(
         file_list: Specific list of files to process (relative paths)
         interactive: If True, interactively select files
         show_progress: Show progress bar during processing (default: True)
+        max_workers: Number of parallel workers (default: 1, set to 0 for auto)
 
     Returns:
         Tuple of (file_count, skipped_count, manifest_path)
@@ -475,6 +526,9 @@ def export(
         >>> from repo_flattener import export
         >>> count, skipped, manifest = export('/path/to/repo', 'output')
         >>> print(f"Processed {count} files")
+
+        >>> # With parallel processing
+        >>> count, skipped, manifest = export('/path/to/repo', 'output', max_workers=4)
     """
     if interactive:
         # Scan and select files interactively
@@ -487,5 +541,6 @@ def export(
         ignore_dirs=ignore_dirs,
         ignore_exts=ignore_exts,
         file_list=file_list,
-        show_progress=show_progress
+        show_progress=show_progress,
+        max_workers=max_workers
     )
