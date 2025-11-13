@@ -14,6 +14,7 @@ A Python package to convert a repository into flattened files for easier uploadi
 - **Progress bar** for visual feedback during processing
 - **Parallel processing** for faster performance on large repositories
 - **Memory optimization** with configurable file size limits
+- **Intelligent caching** for instant manifest generation on unchanged repositories
 - **Configuration file support** (.repo-flattener.yml)
 - Simple command-line interface
 - Clean Python API for programmatic access
@@ -136,6 +137,39 @@ repo-flattener /path/to/repository --workers 4 --max-file-size 10485760
 - Files exceeding the limit are skipped and logged as warnings
 - Skipped files still appear in the manifest but are not flattened
 
+### Manifest Caching
+
+Repo-flattener automatically caches manifest generation to speed up repeated runs on unchanged repositories. The cache uses file modification times and sizes to detect changes.
+
+```bash
+# Default behavior - caching enabled
+repo-flattener /path/to/repository
+
+# Disable caching
+repo-flattener /path/to/repository --no-cache
+
+# Use custom cache directory
+repo-flattener /path/to/repository --cache-dir /path/to/custom/cache
+```
+
+**How Caching Works:**
+- On first run, the manifest is generated and cached with a signature based on file paths, modification times, and sizes
+- On subsequent runs, if the repository hasn't changed (same files with same modification times), the cached manifest is used instantly
+- If any file is modified, added, or removed, the cache is invalidated and the manifest is regenerated
+- Cache is stored in `.repo_flattener_cache/` by default (ignored by git)
+- Each repository/output directory combination has its own cache entry
+
+**Performance Benefits:**
+- **Instant manifest generation** for unchanged repositories (no file scanning needed)
+- Particularly useful when running repo-flattener multiple times during development
+- Cache automatically invalidates when files change, ensuring accuracy
+
+**Cache Management:**
+- Cache files are small (typically a few KB)
+- No manual cache clearing needed - cache auto-invalidates on changes
+- Use `--no-cache` to bypass cache for debugging or one-time runs
+- Add `.repo_flattener_cache/` to your `.gitignore` (recommended)
+
 ### Interactive Mode
 
 Interactive mode allows you to manually select which files to process. This is useful when you want fine-grained control over which files to include.
@@ -221,6 +255,20 @@ count, skipped, manifest = export(
     'output',
     max_workers=4,
     max_file_size=10_000_000
+)
+
+# Disable caching
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    use_cache=False
+)
+
+# Custom cache directory
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    cache_dir='/path/to/custom/cache'
 )
 
 # Using process_repository (lower-level API)
