@@ -12,6 +12,7 @@ A Python package to convert a repository into flattened files for easier uploadi
 - **Robust error handling** with custom exceptions
 - **Configurable logging** with verbose and quiet modes
 - **Progress bar** for visual feedback during processing
+- **Parallel processing** for faster performance on large repositories
 - **Configuration file support** (.repo-flattener.yml)
 - Simple command-line interface
 - Clean Python API for programmatic access
@@ -60,6 +61,12 @@ repo-flattener /path/to/repository --quiet
 
 # Disable progress bar
 repo-flattener /path/to/repository --no-progress
+
+# Parallel processing with 4 workers
+repo-flattener /path/to/repository --workers 4
+
+# Auto-detect optimal number of workers
+repo-flattener /path/to/repository --workers 0
 ```
 
 ### Progress Bar
@@ -82,6 +89,27 @@ repo-flattener /path/to/repository
 # Without progress bar
 repo-flattener /path/to/repository --no-progress
 ```
+
+### Parallel Processing
+
+For large repositories, parallel processing can significantly speed up file processing:
+
+```bash
+# Use 4 parallel workers
+repo-flattener /path/to/repository --workers 4
+
+# Auto-detect optimal number of workers
+repo-flattener /path/to/repository --workers 0
+
+# Combine with other options
+repo-flattener /path/to/repository --workers 4 --verbose
+```
+
+**Performance Tips:**
+- Use 2-8 workers for best performance on most systems
+- `--workers 0` auto-detects: `min(32, CPU_count + 4)`
+- More workers = faster for I/O-bound operations (reading/writing files)
+- Single worker (default) has lowest memory overhead
 
 ### Interactive Mode
 
@@ -141,8 +169,22 @@ count, skipped, manifest = export(
     show_progress=False
 )
 
+# Parallel processing with 4 workers
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    max_workers=4
+)
+
+# Auto-detect optimal number of workers
+count, skipped, manifest = export(
+    '/path/to/repository',
+    'output',
+    max_workers=0  # Auto-detect
+)
+
 # Using process_repository (lower-level API)
-process_repository('/path/to/repository', 'flattened_files')
+process_repository('/path/to/repository', 'flattened_files', max_workers=4)
 
 # Scan repository to get list of files
 files = scan_repository('/path/to/repository')
