@@ -68,11 +68,17 @@ Examples:
                         help='Enable verbose output (DEBUG level)')
     parser.add_argument('--quiet', '-q', action='store_true',
                         help='Suppress all non-error output')
+    parser.add_argument('--no-progress', action='store_true',
+                        help='Disable progress bar')
 
     args = parser.parse_args()
 
     # Setup logging
     setup_logging(verbose=args.verbose, quiet=args.quiet)
+
+    # Determine if progress bar should be shown
+    # Disable progress bar if quiet mode is enabled or explicitly disabled
+    show_progress = not (args.quiet or args.no_progress)
 
     # process ignore lists
     ignore_dirs = args.ignore_dirs.split(',') if args.ignore_dirs else None
@@ -97,7 +103,8 @@ Examples:
                 args.output,
                 ignore_dirs,
                 ignore_exts,
-                file_list=selected_files
+                file_list=selected_files,
+                show_progress=show_progress
             )
         else:
             # Normal mode: process all files
@@ -105,7 +112,8 @@ Examples:
                 args.repo_path,
                 args.output,
                 ignore_dirs,
-                ignore_exts
+                ignore_exts,
+                show_progress=show_progress
             )
     except RepoFlattenerError as e:
         logging.error(f"Error: {e}")
